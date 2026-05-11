@@ -1,33 +1,47 @@
-name: Deploy Backend to Azure
+ trigger:
+ - main
 
-on:
-  push:
-    branches: [ "main" ]
-    paths:
-      - 'backend/**'
+ pool:
+   vmImage: 'ubuntu-latest'
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+   variables:
+     backendPath: 'backend'
 
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+     steps:
 
-      - name: Build and Push to ACR
-        run: |
-          az acr login --name ${{ secrets.ACR_NAME }}
-          docker build -t ${{ secrets.ACR_NAME }}.azurecr.io/snaproakey-backend:${{ github.sha }} ./backend
-          docker push ${{ secrets.ACR_NAME }}.azurecr.io/snaproakey-backend:${{ github.sha }}
+     - task: NodeTool@0
+       inputs:
+           versionSpec: '18.x'
+             displayName: 'Install Node.js'
 
-      - name: Deploy to Container App
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          imageToDeploy: ${{ secrets.ACR_NAME }}.azurecr.io/snaproakey-backend:${{ github.sha }}
-          containerAppName: snaproakey-api
-          resourceGroup: Snaproakey-RG
-          containerAppEnvironment: snaproakey-env
+             - script: |
+                 cd $(backendPath)
+                     npm install
+                       displayName: 'Install Backend Dependencies'
+
+                       - script: |
+                           cd $(backendPath)
+                               npm run build
+                                 displayName: 'Build Backend'
+
+                                 - task: ArchiveFiles@2
+                                   inputs:
+                                       rootFolderOrFile: '$(backendPath)'
+                                           includeRootFolder: false
+                                               archiveType: 'zip'
+                                                   archiveFile: '$(Build.ArtifactStagingDirectory)/backend.zip'
+                                                       replaceExistingArchive: true
+                                                         displayName: 'Archive Backend'
+
+                                                         - task: PublishBuildArtifacts@1
+                                                           inputs:
+                                                               PathtoPublish: '$(Build.ArtifactStagingDirectory)/backend.zip'
+                                                                   ArtifactName: 'backend-drop'
+                                                                     displayName: 'Publish Backend Artifact'
+
+                                                                     - task: AzureWebApp@1
+                                                                       inputs:
+                                                                           azureSubscription: 'YOUR_SERVICE_CONNECTION'
+                                                                               appName: 'snaproakey-api'
+                                                                                   package: '$(Build.ArtifactStagingDirectory)/backend.zip'
+                                                                                     displayName: 'Deploy Backend to Azure'
